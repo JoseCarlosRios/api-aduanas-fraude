@@ -19,15 +19,24 @@ env:
 
 jobs:
   desplegar:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04               # versión fija: evita cambios inesperados del runner
     steps:
       - name: "Paso 1 - Descargar el código del repositorio"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5           # versión que corre en Node.js 24
 
       - name: "Paso 2 - Autenticarse en Azure"
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          # Inicia sesión con el Service Principal usando la CLI de Azure (preinstalada en el runner)
+          CLIENT_ID=$(echo "$AZURE_CREDENTIALS" | jq -r .clientId)
+          CLIENT_SECRET=$(echo "$AZURE_CREDENTIALS" | jq -r .clientSecret)
+          TENANT_ID=$(echo "$AZURE_CREDENTIALS" | jq -r .tenantId)
+          SUBSCRIPTION_ID=$(echo "$AZURE_CREDENTIALS" | jq -r .subscriptionId)
+          echo "::add-mask::$CLIENT_SECRET"
+          az login --service-principal -u "$CLIENT_ID" -p "$CLIENT_SECRET" --tenant "$TENANT_ID" -o none
+          az account set --subscription "$SUBSCRIPTION_ID"
+          echo "Sesión iniciada en la suscripción $(az account show --query name -o tsv)"
 
       - name: "Paso 3 - Construir la imagen Docker"
         run: |

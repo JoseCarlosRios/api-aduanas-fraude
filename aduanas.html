@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detección de fraude aduanero – MLOps EAN</title>
+<style>
+  :root {
+    --fondo: #f4f6f9;
+    --tarjeta: #ffffff;
+    --texto: #1c2430;
+    --suave: #5b6675;
+    --borde: #d5dbe3;
+    --primario: #1f4e8c;
+    --primario-hover: #183e70;
+    --ok-fondo: #e6f4ea;
+    --ok-texto: #146c2e;
+    --mal-fondo: #fdecea;
+    --mal-texto: #a3261d;
+    --aviso-fondo: #fff7e0;
+    --aviso-texto: #6b4d00;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    line-height: 1.5;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 48px; }
+  header h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  header p { margin: 0 0 20px; color: var(--suave); }
+  .ejemplos { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .ejemplos button {
+    background: var(--tarjeta); color: var(--primario); border: 1px solid var(--borde);
+    padding: 8px 12px; font-size: 0.9rem; font-weight: 600; border-radius: 8px; cursor: pointer;
+  }
+  .ejemplos button:hover { border-color: var(--primario); }
+  form {
+    background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 12px;
+    padding: 24px; display: grid; gap: 18px;
+  }
+  fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 14px; }
+  legend { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--suave); margin-bottom: 6px; }
+  .campo label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .campo .opc { font-weight: 400; color: var(--suave); font-size: 0.85rem; }
+  .campo input {
+    width: 100%; padding: 10px 12px; font-size: 1rem; border: 1px solid var(--borde);
+    border-radius: 8px; background: #fff; color: var(--texto);
+  }
+  .campo input:focus { outline: 2px solid var(--primario); outline-offset: 1px; }
+  .ayuda { font-size: 0.85rem; color: var(--suave); margin-top: 4px; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 520px) { .fila { grid-template-columns: 1fr; } }
+  button[type="submit"] {
+    padding: 12px; font-size: 1rem; font-weight: 600; color: #fff; background: var(--primario);
+    border: none; border-radius: 8px; cursor: pointer;
+  }
+  button[type="submit"]:hover:not(:disabled) { background: var(--primario-hover); }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  #estado { margin-top: 20px; padding: 16px; border-radius: 10px; display: none; }
+  #estado.visible { display: block; }
+  #estado.cargando { background: var(--aviso-fondo); color: var(--aviso-texto); }
+  #estado.fraude { background: var(--mal-fondo); color: var(--mal-texto); border: 2px solid var(--mal-texto); }
+  #estado.legal { background: var(--ok-fondo); color: var(--ok-texto); border: 2px solid var(--ok-texto); }
+  #estado.error { background: var(--mal-fondo); color: var(--mal-texto); }
+  .resultado { font-size: 1.7rem; font-weight: 700; margin: 0; }
+  .detalle { margin: 6px 0 0; }
+  .tiempo { margin: 8px 0 0; font-size: 0.85rem; opacity: 0.85; font-variant-numeric: tabular-nums; }
+  .reloj { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 6px 0 0; }
+  #estado ul { margin: 8px 0 0; padding-left: 20px; }
+  footer { margin-top: 24px; font-size: 0.8rem; color: var(--suave); text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>¿Esta declaración es probable fraude?</h1>
+    <p>Ingresa los datos de una declaración de importación. El modelo entrenado con el dataset Bangladesh Customs Fraud Detection (Kaggle) estimará si presenta indicios de fraude.</p>
+  </header>
+
+  <div class="ejemplos" aria-label="Cargar un ejemplo real del dataset">
+    <button type="button" data-ej="fraude">Cargar ejemplo: maletas (fraude)</button>
+    <button type="button" data-ej="legal">Cargar ejemplo: circuitos integrados (legal)</button>
+  </div>
+
+  <form id="formulario" novalidate>
+    <fieldset>
+      <legend>Mercancía</legend>
+      <div class="fila">
+        <div class="campo">
+          <label for="Declared_HS_Code">Partida arancelaria (HS)</label>
+          <input type="number" id="Declared_HS_Code" min="0" max="99999999" step="1" required>
+          <div class="ayuda">Código numérico, hasta 8 dígitos</div>
+        </div>
+        <div class="campo">
+          <label for="TTI_Rate">Tasa arancelaria total (%)</label>
+          <input type="number" id="TTI_Rate" min="0" max="1000" step="0.01" required>
+          <div class="ayuda">Total Tax Incidence, mayor o igual a 0</div>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Ruta</legend>
+      <div class="campo">
+        <label for="Port_of_Entry">Puerto de entrada</label>
+        <input type="text" id="Port_of_Entry" list="puertos" required>
+        <datalist id="puertos">
+          <option value="Chittagong Sea Port">
+          <option value="Benapole Land Port">
+        </datalist>
+        <div class="ayuda">Por ejemplo, Chittagong Sea Port</div>
+      </div>
+      <div class="fila">
+        <div class="campo">
+          <label for="Country_of_Origin">País de origen <span class="opc">(opcional)</span></label>
+          <input type="text" id="Country_of_Origin" maxlength="3">
+          <div class="ayuda">Código de 2 letras, por ejemplo CN</div>
+        </div>
+        <div class="campo">
+          <label for="Country_of_Departure">País de salida <span class="opc">(opcional)</span></label>
+          <input type="text" id="Country_of_Departure" maxlength="3">
+          <div class="ayuda">Si difiere del origen, hay triangulación</div>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Peso y valor</legend>
+      <div class="fila">
+        <div class="campo">
+          <label for="Declared_Weight_KG">Peso declarado (kg)</label>
+          <input type="number" id="Declared_Weight_KG" min="0.01" step="0.01" required>
+          <div class="ayuda">Mayor que 0</div>
+        </div>
+        <div class="campo">
+          <label for="Scanned_Weight_KG">Peso escaneado (kg) <span class="opc">(opcional)</span></label>
+          <input type="number" id="Scanned_Weight_KG" min="0.01" step="0.01">
+          <div class="ayuda">Vacío si la carga no pasó por escáner</div>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="Declared_Value_BDT">Valor declarado (BDT)</label>
+        <input type="number" id="Declared_Value_BDT" min="0.01" step="0.01" required>
+        <div class="ayuda">En takas de Bangladesh, mayor que 0</div>
+      </div>
+    </fieldset>
+
+    <button type="submit" id="boton">Evaluar declaración</button>
+  </form>
+
+  <div id="estado" role="status" aria-live="polite"></div>
+
+  <footer>Proyecto final MLOps · Universidad EAN · Página en Azure Storage → API en Azure Container Apps → modelo en Databricks</footer>
+</main>
+
+<script>
+  const API_URL = "https://api-aduanas-fraude.nicefield-d64c8f5a.westus.azurecontainerapps.io/predecir";
+
+  const EJEMPLOS = {
+    fraude: {Port_of_Entry: "Chittagong Sea Port", Declared_HS_Code: 42021900, Country_of_Origin: "CN", Country_of_Departure: "CN",
+             Declared_Weight_KG: 26.2, Declared_Value_BDT: 18683.96, Scanned_Weight_KG: 26.45, TTI_Rate: 89.32},
+    legal:  {Port_of_Entry: "Chittagong Sea Port", Declared_HS_Code: 85423110, Country_of_Origin: "US", Country_of_Departure: "US",
+             Declared_Weight_KG: 0.8, Declared_Value_BDT: 152648.68, Scanned_Weight_KG: 0.81, TTI_Rate: 37.0}
+  };
+
+  const TEXTO = ["Port_of_Entry"];
+  const TEXTO_OPC = ["Country_of_Origin", "Country_of_Departure"];
+  const DECIMALES = ["Declared_Weight_KG", "Declared_Value_BDT", "TTI_Rate"];
+  const DECIMALES_OPC = ["Scanned_Weight_KG"];
+  const ENTEROS = ["Declared_HS_Code"];
+
+  const formulario = document.getElementById("formulario");
+  const boton = document.getElementById("boton");
+  const estado = document.getElementById("estado");
+  const $ = (id) => document.getElementById(id);
+
+  function cargar(ej) {
+    for (const [k, v] of Object.entries(EJEMPLOS[ej])) $(k).value = v;
+    estado.className = ""; estado.innerHTML = "";
+  }
+  document.querySelectorAll(".ejemplos button").forEach(b => b.addEventListener("click", () => cargar(b.dataset.ej)));
+  cargar("fraude");
+
+  function mostrar(clase, html) { estado.className = "visible " + clase; estado.innerHTML = html; }
+  function formato(seg) { const m = Math.floor(seg / 60), s = Math.floor(seg % 60); return m > 0 ? `${m} min ${String(s).padStart(2, "0")} s` : `${s} s`; }
+  function escapar(t) { const d = document.createElement("div"); d.textContent = String(t); return d.innerHTML; }
+
+  function construirCuerpo() {
+    const c = {};
+    for (const k of TEXTO) c[k] = $(k).value.trim();
+    for (const k of TEXTO_OPC) { const v = $(k).value.trim().toUpperCase(); c[k] = v === "" ? null : v; }
+    for (const k of DECIMALES) c[k] = parseFloat($(k).value);
+    for (const k of DECIMALES_OPC) { const v = $(k).value; c[k] = v === "" ? null : parseFloat(v); }
+    for (const k of ENTEROS) c[k] = parseInt($(k).value, 10);
+    return c;
+  }
+
+  formulario.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cuerpo = construirCuerpo();
+    boton.disabled = true;
+    const inicio = performance.now();
+    const segundos = () => (performance.now() - inicio) / 1000;
+    mostrar("cargando", `Consultando el modelo. La primera consulta puede tardar unos minutos si el servicio estaba apagado.<p class="reloj" id="reloj">0 s</p>`);
+    const reloj = setInterval(() => { const r = document.getElementById("reloj"); if (r) r.textContent = formato(segundos()); }, 1000);
+    const pieTiempo = () => `<p class="tiempo">Tiempo de respuesta: ${segundos() < 10 ? segundos().toFixed(1).replace(".", ",") + " s" : formato(segundos())}</p>`;
+    try {
+      const r = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+      let d = null; try { d = await r.json(); } catch (_) {}
+      if (r.status === 200 && d && Array.isArray(d.predictions)) {
+        const fraude = d.predictions[0] === 1;
+        mostrar(fraude ? "fraude" : "legal",
+          `<p class="resultado">${escapar(d.resultado || (fraude ? "Probable fraude" : "Sin indicios de fraude"))}</p>
+           <p class="detalle">Predicción del modelo: <strong>${d.predictions[0]}</strong> (${fraude ? "1 = probable fraude: priorizar para revisión" : "0 = sin indicios de fraude"})</p>${pieTiempo()}`);
+      } else if (r.status === 422 && d && Array.isArray(d.detail)) {
+        const items = d.detail.map(x => `<li><strong>${escapar(Array.isArray(x.loc) ? x.loc[x.loc.length - 1] : "campo")}</strong>: ${escapar(x.msg)}</li>`).join("");
+        mostrar("error", `<strong>Datos no válidos (422).</strong> Revisa estos campos:<ul>${items}</ul>${pieTiempo()}`);
+      } else if (d && d.detail) {
+        mostrar("error", `<strong>Error ${r.status}:</strong> ${escapar(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail))}${pieTiempo()}`);
+      } else {
+        mostrar("error", `<strong>Error ${r.status}:</strong> respuesta inesperada de la API.`);
+      }
+    } catch (_) {
+      mostrar("error", "<strong>No hubo conexión con la API.</strong> Revisa que la dirección en API_URL sea correcta y que la API esté publicada.");
+    } finally {
+      clearInterval(reloj);
+      boton.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
